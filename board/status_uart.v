@@ -20,16 +20,22 @@ module status_uart #(
     input  wire        ask_valid,
     input  wire [31:0] ask_price,
     input  wire [31:0] ask_qty,
+    input  wire [31:0] orders_sent,
+    input  wire [31:0] orders_dropped,
+    input  wire [31:0] last_latency,
+    input  wire [31:0] min_latency,
+    input  wire [31:0] max_latency,
 
     output wire        uart_txd
 );
 
-    localparam [7:0] LENGTH = 8'd154;
-    localparam [7:0] DIGITS = 8'd94;
+    localparam [7:0] LENGTH = 8'd223;
+    localparam [7:0] DIGITS = 8'd134;
 
     localparam [8*LENGTH-1:0] TEMPLATE = {
         "ok=######## crc=######## drop=######## gap=######## ovf=######## msg=######## ",
-        "max=#### col=#### oor=#### bid=# ######## ######## ask=# ######## ########\015\012"};
+        "max=#### col=#### oor=#### bid=# ######## ######## ask=# ######## ######## ",
+        "ord=######## odrop=######## lat=######## lmin=######## lmax=########\015\012"};
 
     function [7:0] hex_digit(input [3:0] n);
         hex_digit = (n < 4'd10) ? 8'h30 + {4'd0, n} : 8'h37 + {4'd0, n};
@@ -64,7 +70,8 @@ module status_uart #(
                     digits  <= {frames_ok, crc_errors, frames_dropped, seq_gaps, fifo_overflows,
                                 msg_count, fifo_max, collisions, out_of_range,
                                 3'd0, bid_valid, bid_price, bid_qty,
-                                3'd0, ask_valid, ask_price, ask_qty};
+                                3'd0, ask_valid, ask_price, ask_qty,
+                                orders_sent, orders_dropped, last_latency, min_latency, max_latency};
                     index   <= 8'd0;
                     sending <= 1'b1;
                 end

@@ -31,15 +31,19 @@ set_property -dict { PACKAGE_PIN F16 IOSTANDARD LVCMOS33 } [get_ports eth_mdc]
 set_property -dict { PACKAGE_PIN K13 IOSTANDARD LVCMOS33 } [get_ports eth_mdio]
 
 create_clock -name eth_rx_clk -period 40.000 [get_ports eth_rx_clk]
+create_clock -name eth_tx_clk -period 40.000 [get_ports eth_tx_clk]
 
-set_clock_groups -asynchronous -group [get_clocks -include_generated_clocks sys_clk] -group [get_clocks eth_rx_clk]
+set_clock_groups -asynchronous -group [get_clocks -include_generated_clocks sys_clk] -group [get_clocks eth_rx_clk] -group [get_clocks eth_tx_clk]
 
 set_input_delay -clock eth_rx_clk -max 30.000 [get_ports {eth_rx_dv eth_rxd[*]}]
 set_input_delay -clock eth_rx_clk -min 10.000 [get_ports {eth_rx_dv eth_rxd[*]}]
 
+set_output_delay -clock eth_tx_clk -max 10.000 [get_ports {eth_tx_en eth_txd[*]}]
+set_output_delay -clock eth_tx_clk -min 0.000 [get_ports {eth_tx_en eth_txd[*]}]
+
 set_false_path -from [get_ports btn_rst]
 set_false_path -to [get_ports {led[*] uart_txd}]
-set_false_path -to [get_ports {eth_rstn eth_ref_clk eth_tx_en eth_txd[*] eth_mdc eth_mdio}]
+set_false_path -to [get_ports {eth_rstn eth_ref_clk eth_mdc eth_mdio}]
 
 set_property CFGBVS VCCO [current_design]
 set_property CONFIG_VOLTAGE 3.3 [current_design]

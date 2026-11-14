@@ -2,24 +2,31 @@ import argparse
 
 from book import Book, read_messages, setup
 from replay import limited, mold_packets
+from strategy import DEFAULT_LIMIT_PRICE, DEFAULT_MAX_QTY, Strategy
 
 
-def expected_fields(bodies, locate, base):
+def expected_fields(bodies, locate, base, limit_price=DEFAULT_LIMIT_PRICE, max_qty=DEFAULT_MAX_QTY):
     book = Book(locate, base)
+    strat = Strategy(limit_price, max_qty)
     count = 0
     for body in bodies:
-        book.process(body)
         count += 1
+        snap = book.process(body)
+        if snap is not None:
+            _, _, _, av, ap, aq = snap
+            strat.step(av, ap, aq, count)
     bv, bp, bq, av, ap, aq = book.best()
     return {"msg": count, "col": book.collisions, "oor": book.out_of_range,
-            "bid": (bv, bp, bq), "ask": (av, ap, aq)}
+            "bid": (bv, bp, bq), "ask": (av, ap, aq),
+            "ord": len(strat.orders), "odrop": 0}
 
 
 def status_text(fields):
     bv, bp, bq = fields["bid"]
     av, ap, aq = fields["ask"]
     return (f"msg={fields['msg']:08X} col={fields['col']:04X} oor={fields['oor']:04X} "
-            f"bid={bv} {bp:08X} {bq:08X} ask={av} {ap:08X} {aq:08X}")
+            f"bid={bv} {bp:08X} {bq:08X} ask={av} {ap:08X} {aq:08X} "
+            f"ord={fields['ord']:08X} odrop={fields['odrop']:08X}")
 
 
 def dollars(side):

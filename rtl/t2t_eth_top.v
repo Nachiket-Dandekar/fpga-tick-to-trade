@@ -1,12 +1,19 @@
 module t2t_eth_top #(
-    parameter [15:0] UDP_PORT  = 16'd26400,
-    parameter        FIFO_ADDR = 12
+    parameter [15:0] UDP_PORT    = 16'd26400,
+    parameter        FIFO_ADDR   = 12,
+    parameter [31:0] LIMIT_PRICE = 32'hFFFFFFFF,
+    parameter [31:0] MAX_QTY     = 32'd500,
+    parameter [63:0] STOCK       = "UN      "
 ) (
     input  wire        clk,
     input  wire        rx_clk,
+    input  wire        tx_clk,
     input  wire        rst,
     input  wire        mii_rx_dv,
     input  wire [3:0]  mii_rxd,
+    output wire        mii_tx_en,
+    output wire [3:0]  mii_txd,
+    output wire        tx_underrun,
 
     input  wire [15:0] target_locate,
     input  wire [31:0] base_price,
@@ -27,7 +34,13 @@ module t2t_eth_top #(
     output wire [31:0] seq_gaps,
     output reg  [31:0] fifo_overflows,
     output reg  [31:0] msg_count,
-    output reg  [15:0] fifo_max
+    output reg  [15:0] fifo_max,
+
+    output wire [31:0] orders_sent,
+    output wire [31:0] orders_dropped,
+    output wire [31:0] last_latency,
+    output wire [31:0] min_latency,
+    output wire [31:0] max_latency
 );
 
     (* ASYNC_REG = "TRUE" *) reg [1:0] rx_rst_sync;
@@ -64,9 +77,21 @@ module t2t_eth_top #(
     wire                 fifo_full;
     wire                 fifo_overflow;
     wire                 fifo_valid;
-    wire [8:0]           fifo_data;
+    wire [32:0]          fifo_data;
     wire [FIFO_ADDR:0]   fifo_level;
     wire [15:0]          fifo_fill = {{(15 - FIFO_ADDR){1'b0}}, fifo_level};
+
+    reg  [23:0] cycle_cnt;
+    reg  [23:0] udp_stamp;
+    reg  [23:0] msg_stamp;
+    reg  [23:0] book_stamp;
+    reg  [31:0] book_msg_idx;
+    reg  [23:0] trig_stamp;
+    reg  [31:0] trig_msg_idx;
+
+    wire        order_valid;
+    wire [31:0] order_price;
+    wire [31:0] order_shares;
 
     wire        busy;
     wire        byte_ready = !busy;
@@ -155,11 +180,11 @@ module t2t_eth_top #(
         .seq_gaps       (seq_gaps)
     );
 
-    sync_fifo #(.WIDTH(9), .ADDR(FIFO_ADDR)) fifo (
+    sync_fifo #(.WIDTH(33), .ADDR(FIFO_ADDR)) fifo (
         .clk       (clk),
         .rst       (rst),
         .in_valid  (udp_valid),
-        .in_data   ({udp_first, udp_data}),
+        .in_data   ({udp_stamp, udp_first, udp_data}),
         .full      (fifo_full),
         .overflow  (fifo_overflow),
         .out_valid (fifo_valid),
@@ -210,6 +235,40 @@ module t2t_eth_top #(
         .out_of_range  (out_of_range)
     );
 
+    trigger trig (
+        .clk          (clk),
+        .rst          (rst),
+        .limit_price  (LIMIT_PRICE),
+        .max_qty      (MAX_QTY),
+        .book_update  (book_update),
+        .ask_valid    (ask_valid),
+        .ask_price    (ask_price),
+        .ask_qty      (ask_qty),
+        .order_valid  (order_valid),
+        .order_price  (order_price),
+        .order_shares (order_shares)
+    );
+
+    order_tx #(.STOCK(STOCK)) tx_path (
+        .clk            (clk),
+        .tx_clk         (tx_clk),
+        .rst            (rst),
+        .cycle_cnt      (cycle_cnt),
+        .order_valid    (order_valid),
+        .order_price    (order_price),
+        .order_shares   (order_shares),
+        .order_stamp    (trig_stamp),
+        .order_msg_idx  (trig_msg_idx),
+        .mii_tx_en      (mii_tx_en),
+        .mii_txd        (mii_txd),
+        .tx_underrun    (tx_underrun),
+        .orders_sent    (orders_sent),
+        .orders_dropped (orders_dropped),
+        .last_latency   (last_latency),
+        .min_latency    (min_latency),
+        .max_latency    (max_latency)
+    );
+
     always @(posedge clk) begin
         if (rst) begin
             frames_ok      <= 32'd0;
@@ -217,15 +276,33 @@ module t2t_eth_top #(
             fifo_overflows <= 32'd0;
             msg_count      <= 32'd0;
             fifo_max       <= 16'd0;
+            cycle_cnt      <= 24'd0;
+            udp_stamp      <= 24'd0;
+            msg_stamp      <= 24'd0;
+            book_stamp     <= 24'd0;
+            book_msg_idx   <= 32'd0;
+            trig_stamp     <= 24'd0;
+            trig_msg_idx   <= 32'd0;
         end else begin
+            cycle_cnt <= cycle_cnt + 24'd1;
+            udp_stamp <= cycle_cnt;
+            if (fifo_valid && byte_ready)
+                msg_stamp <= fifo_data[32:9];
             if (rx_end && rx_crc_ok)
                 frames_ok <= frames_ok + 32'd1;
             if (rx_end && !rx_crc_ok)
                 crc_errors <= crc_errors + 32'd1;
             if (fifo_overflow || cross_drop)
                 fifo_overflows <= fifo_overflows + 32'd1;
-            if (msg_valid)
-                msg_count <= msg_count + 32'd1;
+            if (msg_valid) begin
+                msg_count    <= msg_count + 32'd1;
+                book_stamp   <= msg_stamp;
+                book_msg_idx <= msg_count + 32'd1;
+            end
+            if (book_update) begin
+                trig_stamp   <= book_stamp;
+                trig_msg_idx <= book_msg_idx;
+            end
             if (fifo_fill > fifo_max)
                 fifo_max <= fifo_fill;
         end

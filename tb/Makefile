@@ -6,7 +6,8 @@ FIFO_ADDR ?= 4
 RTL = $(PWD)/../rtl
 BOARD = $(PWD)/../board
 ETH_SOURCES = $(RTL)/crc32.v $(RTL)/mii_rx.v $(RTL)/async_fifo.v $(RTL)/udp_strip.v $(RTL)/ram_sdp.v \
-              $(RTL)/sync_fifo.v $(RTL)/itch_parser.v $(RTL)/order_book.v $(RTL)/t2t_eth_top.v
+              $(RTL)/sync_fifo.v $(RTL)/itch_parser.v $(RTL)/order_book.v $(RTL)/trigger.v \
+              $(RTL)/mii_tx.v $(RTL)/order_tx.v $(RTL)/t2t_eth_top.v
 
 ifeq ($(TOP),book)
 VERILOG_SOURCES = $(RTL)/itch_parser.v $(RTL)/ram_sdp.v $(RTL)/order_book.v $(RTL)/t2t_top.v
@@ -34,6 +35,14 @@ else ifeq ($(TOP),afifo)
 VERILOG_SOURCES = $(RTL)/async_fifo.v
 COCOTB_TOPLEVEL = async_fifo
 COCOTB_TEST_MODULES = test_async_fifo
+else ifeq ($(TOP),trigger)
+VERILOG_SOURCES = $(RTL)/trigger.v
+COCOTB_TOPLEVEL = trigger
+COCOTB_TEST_MODULES = test_trigger
+else ifeq ($(TOP),miitx)
+VERILOG_SOURCES = $(RTL)/crc32.v $(RTL)/async_fifo.v $(RTL)/mii_tx.v $(RTL)/order_tx.v
+COCOTB_TOPLEVEL = order_tx
+COCOTB_TEST_MODULES = test_mii_tx
 else ifeq ($(TOP),eth)
 VERILOG_SOURCES = $(ETH_SOURCES)
 COCOTB_TOPLEVEL = t2t_eth_top
