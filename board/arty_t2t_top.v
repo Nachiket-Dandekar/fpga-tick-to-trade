@@ -1,6 +1,9 @@
 module arty_t2t_top #(
     parameter [15:0] TARGET_LOCATE = 16'd8162,
     parameter [31:0] BASE_PRICE    = 32'd374300,
+    parameter [31:0] LIMIT_PRICE   = 32'hFFFFFFFF,
+    parameter [31:0] MAX_QTY       = 32'd500,
+    parameter [63:0] STOCK         = "UN      ",
     parameter        BAUD          = 115_200,
     parameter        STATUS_HZ     = 1,
     parameter        PHY_RESET_US  = 10_000
@@ -25,7 +28,7 @@ module arty_t2t_top #(
     inout  wire       eth_mdio
 );
 
-    localparam SYS_DIV      = 16;
+    localparam SYS_DIV      = 8;
     localparam SYS_HZ       = 800_000_000 / SYS_DIV;
     localparam CLKS_PER_BIT = SYS_HZ / BAUD;
     localparam PERIOD_CLKS  = SYS_HZ / STATUS_HZ;
@@ -33,10 +36,8 @@ module arty_t2t_top #(
     localparam BLINK_CLKS   = SYS_HZ / 2;
     localparam FLASH_CLKS   = SYS_HZ / 20;
 
-    assign eth_tx_en = 1'b0;
-    assign eth_txd   = 4'd0;
-    assign eth_mdc   = 1'b0;
-    assign eth_mdio  = 1'bz;
+    assign eth_mdc  = 1'b0;
+    assign eth_mdio = 1'bz;
 
     wire clk_fb_raw;
     wire clk_fb;
@@ -45,6 +46,7 @@ module arty_t2t_top #(
     wire clk_25_raw;
     wire clk_25;
     wire rx_clk;
+    wire tx_clk;
     wire locked;
 
     MMCME2_BASE #(
@@ -68,6 +70,7 @@ module arty_t2t_top #(
     BUFG sys_buf (.I(clk_sys_raw), .O(clk_sys));
     BUFG ref_buf (.I(clk_25_raw),  .O(clk_25));
     BUFG rx_buf  (.I(eth_rx_clk),  .O(rx_clk));
+    BUFG tx_buf  (.I(eth_tx_clk),  .O(tx_clk));
 
     ODDR #(.DDR_CLK_EDGE("SAME_EDGE")) ref_out (
         .Q  (eth_ref_clk),
@@ -124,15 +127,30 @@ module arty_t2t_top #(
     wire [31:0] fifo_overflows;
     wire [31:0] msg_count;
     wire [15:0] fifo_max;
+    wire        tx_underrun;
+    wire [31:0] orders_sent;
+    wire [31:0] orders_dropped;
+    wire [31:0] last_latency;
+    wire [31:0] min_latency;
+    wire [31:0] max_latency;
 
-    wire        unused = &{1'b0, eth_rxerr, eth_col, eth_crs, eth_tx_clk, book_update};
+    wire        unused = &{1'b0, eth_rxerr, eth_col, eth_crs, book_update};
 
-    t2t_eth_top #(.UDP_PORT(16'd26400)) eth (
+    t2t_eth_top #(
+        .UDP_PORT    (16'd26400),
+        .LIMIT_PRICE (LIMIT_PRICE),
+        .MAX_QTY     (MAX_QTY),
+        .STOCK       (STOCK)
+    ) eth (
         .clk            (clk_sys),
         .rx_clk         (rx_clk),
+        .tx_clk         (tx_clk),
         .rst            (rst),
         .mii_rx_dv      (eth_rx_dv),
         .mii_rxd        (eth_rxd),
+        .mii_tx_en      (eth_tx_en),
+        .mii_txd        (eth_txd),
+        .tx_underrun    (tx_underrun),
         .target_locate  (TARGET_LOCATE),
         .base_price     (BASE_PRICE),
         .book_update    (book_update),
@@ -150,7 +168,12 @@ module arty_t2t_top #(
         .seq_gaps       (seq_gaps),
         .fifo_overflows (fifo_overflows),
         .msg_count      (msg_count),
-        .fifo_max       (fifo_max)
+        .fifo_max       (fifo_max),
+        .orders_sent    (orders_sent),
+        .orders_dropped (orders_dropped),
+        .last_latency   (last_latency),
+        .min_latency    (min_latency),
+        .max_latency    (max_latency)
     );
 
     status_uart #(
@@ -174,6 +197,11 @@ module arty_t2t_top #(
         .ask_valid      (ask_valid),
         .ask_price      (ask_valid ? ask_price : 32'd0),
         .ask_qty        (ask_valid ? ask_qty : 32'd0),
+        .orders_sent    (orders_sent),
+        .orders_dropped (orders_dropped),
+        .last_latency   (last_latency),
+        .min_latency    (min_latency),
+        .max_latency    (max_latency),
         .uart_txd       (uart_txd)
     );
 
@@ -206,7 +234,8 @@ module arty_t2t_top #(
             led[0] <= blink;
             led[1] <= (flash_count != 32'd0);
             led[2] <= bid_valid && ask_valid;
-            led[3] <= (crc_errors != 32'd0) || (seq_gaps != 32'd0) || (fifo_overflows != 32'd0);
+            led[3] <= (crc_errors != 32'd0) || (seq_gaps != 32'd0) || (fifo_overflows != 32'd0) ||
+                      (orders_dropped != 32'd0) || tx_underrun;
         end
     end
 
