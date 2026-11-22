@@ -2,7 +2,7 @@
 
 A small trading pipeline built in Verilog on a Digilent Arty A7-100T. The board receives real Nasdaq market data over Ethernet, keeps an order book for one stock, and sends an order back when the best ask price changes. From the last byte of market data in to the first byte of the order out takes 130 ns.
 
-"Tick to trade" is the time between a market update arriving and your order leaving. Trading firms build this path in FPGAs because software cannot react in nanoseconds. I wanted to build the whole path myself, measure it on real hardware, and find out what limits it.
+"Tick to trade" is the time between a market update arriving and your order leaving. Trading firms build this path in FPGAs because software cannot react in nanoseconds. I wanted to build the whole path myself, measure it on hardware, and find out what limits it.
 
 ![Raspberry Pi 5 connected to the Arty A7-100T by Ethernet](docs/stage3_board_and_pi.jpg)
 
